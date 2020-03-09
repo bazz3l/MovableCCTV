@@ -1,14 +1,17 @@
+using System.Collections.Generic;
+using Oxide.Game.Rust.Cui;
 using System.Linq;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Movable CCTV", "Bazz3l", "1.0.3")]
+    [Info("Movable CCTV", "Bazz3l", "1.0.4")]
     [Description("Movable cctv cameras using WASD")]
     class MovableCCTV : CovalencePlugin
     {
         #region Fields
-        readonly float RotateSpeed = 0.2f;
+        const string panelName = "cctv_panel";
+
         public static MovableCCTV plugin;
         #endregion
 
@@ -28,6 +31,15 @@ namespace Oxide.Plugins
         class PluginConfig
         {
             public float RotateSpeed;
+        }
+        #endregion
+
+        #region Local
+        protected override void LoadDefaultMessages()
+        {
+            lang.RegisterMessages(new Dictionary<string, string> {
+                {"mounted", "Use WASD to move the camera."},
+            }, this);
         }
         #endregion
 
@@ -53,7 +65,15 @@ namespace Oxide.Plugins
 
         void Unload()
         {
-            foreach (var obj in UnityEngine.Object.FindObjectsOfType<CameraMover>().ToList()) GameObject.Destroy(obj);
+            foreach (CameraMover obj in UnityEngine.Object.FindObjectsOfType<CameraMover>().ToList())
+            {
+                GameObject.Destroy(obj);
+            }
+
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+            {
+                CuiHelper.DestroyUi(player, panelName);
+            }
         }
 
         void OnEntitySpawned(CCTV_RC cctv)
@@ -69,17 +89,27 @@ namespace Oxide.Plugins
             if (player.GetComponent<CameraMover>() == null)
             {
                 player.gameObject.AddComponent<CameraMover>();
+
+                CuiHelper.AddUi(player, CreateUI(player));
             }
         }
 
         void OnEntityDismounted(ComputerStation station, BasePlayer player)
         {
-            var cameraMover = player.GetComponent<CameraMover>();
-            if (cameraMover == null) return;
-            cameraMover.Destroy();
-        }
+            CameraMover cameraMover = player.GetComponent<CameraMover>();
+            if (cameraMover == null)
+            {
+                return;
+            }
 
-        public class CameraMover : MonoBehaviour
+            cameraMover.Destroy();
+
+            CuiHelper.DestroyUi(player, panelName);
+        }
+        #endregion
+
+        #region Classes
+        class CameraMover : MonoBehaviour
         {
             public BasePlayer player { get; set; }
             public ComputerStation station { get; set; }
@@ -118,6 +148,46 @@ namespace Oxide.Plugins
                 Destroy(this);
             }
         }
+        #endregion
+
+        #region UI
+        CuiElementContainer CreateUI(BasePlayer player)
+        {
+            CuiElementContainer elements = new CuiElementContainer();
+
+            string panel = elements.Add(new CuiPanel {
+                CursorEnabled = true,
+
+                Image = {
+                    Color = "0 0 0 0"
+                },
+
+                RectTransform = {
+                    AnchorMin = "0.293 0.903",
+                    AnchorMax = "0.684 0.951"
+                }
+            }, "Overlay", panelName);
+
+            elements.Add(new CuiLabel
+            {
+                Text = {
+                    Text  = Lang("mounted", player.UserIDString),
+                    Align = TextAnchor.MiddleCenter,
+                    Color = "1 1 1 0.5",
+                    FontSize = 14
+                },
+                RectTransform = {
+                    AnchorMin = "0 0",
+                    AnchorMax = "1 1"
+                }
+            }, panel);
+
+            return elements;
+        }
+        #endregion
+
+        #region Helpers
+        string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
         #endregion
     }
 }

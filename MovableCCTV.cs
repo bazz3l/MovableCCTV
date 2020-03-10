@@ -16,7 +16,6 @@ namespace Oxide.Plugins
 
         CuiElementContainer uiElements;
         CuiTextComponent textLabel;
-        
         #endregion
 
         #region Config

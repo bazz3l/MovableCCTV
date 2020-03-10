@@ -5,14 +5,18 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Movable CCTV", "Bazz3l", "1.0.4")]
-    [Description("Movable cctv cameras using WASD")]
-    class MovableCCTV : CovalencePlugin
+    [Info("Movable CCTV", "Bazz3l", "1.0.5")]
+    [Description("Player controllable cctv cameras using WASD")]
+    class MovableCCTV : RustPlugin
     {
         #region Fields
         const string panelName = "cctv_panel";
 
         public static MovableCCTV plugin;
+
+        CuiElementContainer uiElements;
+        CuiTextComponent textLabel;
+        
         #endregion
 
         #region Config
@@ -55,6 +59,8 @@ namespace Oxide.Plugins
                     cctv.hasPTZ = true;
                 }
             }
+
+            CreateUI();
         }
 
         void Init()
@@ -65,7 +71,7 @@ namespace Oxide.Plugins
 
         void Unload()
         {
-            foreach (CameraMover obj in UnityEngine.Object.FindObjectsOfType<CameraMover>().ToList())
+            foreach (CameraMover obj in UnityEngine.Object.FindObjectsOfType<CameraMover>())
             {
                 GameObject.Destroy(obj);
             }
@@ -90,7 +96,7 @@ namespace Oxide.Plugins
             {
                 player.gameObject.AddComponent<CameraMover>();
 
-                CuiHelper.AddUi(player, CreateUI(player));
+                CuiHelper.AddUi(player, PlayerUI(player));
             }
         }
 
@@ -117,6 +123,14 @@ namespace Oxide.Plugins
             public void Awake()
             {
                 player = GetComponent<BasePlayer>();
+                
+                if (player == null)
+                {
+                    Destroy();
+
+                    return;
+                }
+
                 station = player.GetMounted() as ComputerStation;
             }
 
@@ -128,7 +142,13 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                if (station == null || !station.currentlyControllingEnt.IsValid(true) || station.currentlyControllingEnt.Get(true).GetComponent<CCTV_RC>().IsStatic())
+                if (station == null || !station.currentlyControllingEnt.IsValid(true))
+                {
+                    return;
+                }
+
+                CCTV_RC cctv = station.currentlyControllingEnt.Get(true).GetComponent<CCTV_RC>();
+                if (cctv == null || cctv.IsStatic())
                 {
                     return;
                 }
@@ -140,7 +160,7 @@ namespace Oxide.Plugins
                 inputState.current.mouseDelta.y = y * plugin.config.RotateSpeed;
                 inputState.current.mouseDelta.x = x * plugin.config.RotateSpeed;
 
-                station.currentlyControllingEnt.Get(true).GetComponent<CCTV_RC>().UserInput(inputState, player);
+                cctv.UserInput(inputState, player);
             }
 
             public void Destroy()
@@ -151,27 +171,25 @@ namespace Oxide.Plugins
         #endregion
 
         #region UI
-        CuiElementContainer CreateUI(BasePlayer player)
+        void CreateUI()
         {
-            CuiElementContainer elements = new CuiElementContainer();
+            uiElements = new CuiElementContainer();
 
-            string panel = elements.Add(new CuiPanel {
+            string panel = uiElements.Add(new CuiPanel {
                 CursorEnabled = true,
-
                 Image = {
                     Color = "0 0 0 0"
                 },
-
                 RectTransform = {
                     AnchorMin = "0.293 0.903",
                     AnchorMax = "0.684 0.951"
                 }
             }, "Overlay", panelName);
 
-            elements.Add(new CuiLabel
+            CuiLabel label = new CuiLabel
             {
                 Text = {
-                    Text  = Lang("mounted", player.UserIDString),
+                    Text  = "",
                     Align = TextAnchor.MiddleCenter,
                     Color = "1 1 1 0.5",
                     FontSize = 14
@@ -180,9 +198,18 @@ namespace Oxide.Plugins
                     AnchorMin = "0 0",
                     AnchorMax = "1 1"
                 }
-            }, panel);
+            };
 
-            return elements;
+            textLabel = label.Text;
+
+            uiElements.Add(label, panel);
+        }
+
+        CuiElementContainer PlayerUI(BasePlayer player)
+        {
+            textLabel.Text = Lang("mounted", player.UserIDString);
+
+            return uiElements;
         }
         #endregion
 

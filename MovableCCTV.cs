@@ -1,11 +1,10 @@
 using System.Collections.Generic;
 using Oxide.Game.Rust.Cui;
-using System.Linq;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Movable CCTV", "Bazz3l", "1.0.5")]
+    [Info("Movable CCTV", "Bazz3l", "1.0.6")]
     [Description("Player controllable cctv cameras using WASD")]
     class MovableCCTV : RustPlugin
     {
@@ -94,14 +93,15 @@ namespace Oxide.Plugins
             if (player.GetComponent<CameraMover>() == null)
             {
                 player.gameObject.AddComponent<CameraMover>();
-
-                CuiHelper.AddUi(player, PlayerUI(player));
             }
+
+            CuiHelper.AddUi(player, PlayerUI(player));
         }
 
         void OnEntityDismounted(ComputerStation station, BasePlayer player)
         {
             CameraMover cameraMover = player.GetComponent<CameraMover>();
+
             if (cameraMover == null)
             {
                 return;
@@ -116,26 +116,25 @@ namespace Oxide.Plugins
         #region Classes
         class CameraMover : MonoBehaviour
         {
-            public BasePlayer player { get; set; }
-            public ComputerStation station { get; set; }
+            ComputerStation station;
+            BasePlayer player;
 
-            public void Awake()
+            void Awake()
             {
                 player = GetComponent<BasePlayer>();
-                
+
                 if (player == null)
                 {
                     Destroy();
-
                     return;
                 }
 
                 station = player.GetMounted() as ComputerStation;
             }
 
-            private void FixedUpdate()
+            void FixedUpdate()
             {
-                if (player == null || player.IsSleeping() || !player.IsConnected)
+                if (player == null || !player.IsConnected || player.IsSleeping())
                 {
                     Destroy();
                     return;
@@ -162,10 +161,7 @@ namespace Oxide.Plugins
                 cctv.UserInput(inputState, player);
             }
 
-            public void Destroy()
-            {
-                Destroy(this);
-            }
+            public void Destroy() => Destroy(this);
         }
         #endregion
 

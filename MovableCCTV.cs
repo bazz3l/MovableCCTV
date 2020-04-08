@@ -9,8 +9,11 @@ namespace Oxide.Plugins
     class MovableCCTV : RustPlugin
     {
         #region Fields
+        const string permUse = "movablecctv.use";
         const string panelName = "cctv_panel";
+
         public static MovableCCTV plugin;
+
         CuiElementContainer uiElements;
         CuiTextComponent textLabel;
         #endregion
@@ -38,7 +41,7 @@ namespace Oxide.Plugins
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string> {
-                {"mounted", "Use WASD to move the camera."},
+                {"mounted", "Use WASD to move the camera."}
             }, this);
         }
         #endregion
@@ -46,16 +49,8 @@ namespace Oxide.Plugins
         #region Oxide
         void OnServerInitialized()
         {
-            foreach (BaseEntity entity in BaseNetworkable.serverEntities)
-            {
-                CCTV_RC cctv = entity.GetComponent<CCTV_RC>();
-
-                if (cctv != null && !cctv.IsStatic())
-                {
-                    cctv.hasPTZ = true;
-                }
-            }
-
+            permission.RegisterPermission(permUse, this);
+            CheckMoveble();
             CreateUI();
         }
 
@@ -88,6 +83,11 @@ namespace Oxide.Plugins
 
         void OnEntityMounted(ComputerStation station, BasePlayer player)
         {
+            if (!permission.UserHasPermission(player.UserIDString, permUse))
+            {
+                return;
+            }
+
             if (player.GetComponent<CameraMover>() == null)
             {
                 player.gameObject.AddComponent<CameraMover>();
@@ -98,8 +98,12 @@ namespace Oxide.Plugins
 
         void OnEntityDismounted(ComputerStation station, BasePlayer player)
         {
-            CameraMover cameraMover = player.GetComponent<CameraMover>();
+            if (!permission.UserHasPermission(player.UserIDString, permUse))
+            {
+                return;
+            }
 
+            CameraMover cameraMover = player.GetComponent<CameraMover>();
             if (cameraMover == null)
             {
                 return;
@@ -111,7 +115,19 @@ namespace Oxide.Plugins
         }
         #endregion
 
-        #region Classes
+        #region Core
+        void CheckMoveble()
+        {
+            foreach(BaseEntity entity in BaseNetworkable.serverEntities)
+            {
+                CCTV_RC cctv = entity.GetComponent<CCTV_RC>();
+                if (cctv != null && !cctv.IsStatic())
+                {
+                    cctv.hasPTZ = true;
+                }
+            }
+        }
+
         class CameraMover : MonoBehaviour
         {
             ComputerStation station;
@@ -119,7 +135,13 @@ namespace Oxide.Plugins
 
             void Awake()
             {
-                player  = GetComponent<BasePlayer>();
+                player = GetComponent<BasePlayer>();
+                if (player == null)
+                {
+                    Destroy();
+                    return;
+                }
+
                 station = player?.GetMounted() as ComputerStation;
             }
 
@@ -171,7 +193,7 @@ namespace Oxide.Plugins
                 Text = {
                     Text  = "",
                     Align = TextAnchor.MiddleCenter,
-                    Color = "1 1 1 0.7",
+                    Color = "1 1 1 0.5",
                     FontSize = 14
                 },
                 RectTransform = {

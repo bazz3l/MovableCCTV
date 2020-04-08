@@ -4,15 +4,13 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Movable CCTV", "Bazz3l", "1.0.6")]
+    [Info("Movable CCTV", "Bazz3l", "1.0.7")]
     [Description("Player controllable cctv cameras using WASD")]
     class MovableCCTV : RustPlugin
     {
         #region Fields
         const string panelName = "cctv_panel";
-
         public static MovableCCTV plugin;
-
         CuiElementContainer uiElements;
         CuiTextComponent textLabel;
         #endregion
@@ -121,25 +119,12 @@ namespace Oxide.Plugins
 
             void Awake()
             {
-                player = GetComponent<BasePlayer>();
-
-                if (player == null)
-                {
-                    Destroy();
-                    return;
-                }
-
-                station = player.GetMounted() as ComputerStation;
+                player  = GetComponent<BasePlayer>();
+                station = player?.GetMounted() as ComputerStation;
             }
 
             void FixedUpdate()
             {
-                if (player == null || !player.IsConnected || player.IsSleeping())
-                {
-                    Destroy();
-                    return;
-                }
-
                 if (station == null || !station.currentlyControllingEnt.IsValid(true))
                 {
                     return;
@@ -186,7 +171,7 @@ namespace Oxide.Plugins
                 Text = {
                     Text  = "",
                     Align = TextAnchor.MiddleCenter,
-                    Color = "1 1 1 0.5",
+                    Color = "1 1 1 0.7",
                     FontSize = 14
                 },
                 RectTransform = {

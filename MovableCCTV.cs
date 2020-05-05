@@ -4,22 +4,23 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Movable CCTV", "Bazz3l", "1.0.7")]
-    [Description("Player controllable cctv cameras using WASD")]
+    [Info("Movable CCTV", "Bazz3l", "1.0.8")]
+    [Description("Allows player to control placed cameras.")]
     class MovableCCTV : RustPlugin
     {
         #region Fields
-        const string permUse = "movablecctv.use";
-        const string panelName = "cctv_panel";
+        const string _moveSound = "assets/prefabs/deployable/playerioents/detectors/hbhfsensor/effects/detect_up.prefab";
+        const string _permUse = "movablecctv.use";
+        const string _panelName = "cctv_panel";
 
-        public static MovableCCTV plugin;
+        public static MovableCCTV Instance;
 
-        CuiElementContainer uiElements;
-        CuiTextComponent textLabel;
+        CuiElementContainer _uiElements;
+        CuiTextComponent _textLabel;
         #endregion
 
         #region Config
-        PluginConfig config;
+        PluginConfig _config;
 
         protected override void LoadDefaultConfig() => Config.WriteObject(GetDefaultConfig(), true);
 
@@ -27,12 +28,14 @@ namespace Oxide.Plugins
         {
             return new PluginConfig
             {
+                RotateSound = true,
                 RotateSpeed = 0.2f
             };
         }
 
         class PluginConfig
         {
+            public float RotateSound;
             public float RotateSpeed;
         }
         #endregion
@@ -41,7 +44,7 @@ namespace Oxide.Plugins
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string> {
-                {"mounted", "Use WASD to move the camera."}
+                {"mounted", "Control cameras using W A S D."}
             }, this);
         }
         #endregion
@@ -49,15 +52,17 @@ namespace Oxide.Plugins
         #region Oxide
         void OnServerInitialized()
         {
-            permission.RegisterPermission(permUse, this);
-            CheckMoveble();
-            CreateUI();
+            permission.RegisterPermission(_permUse, this);
+
+            MakeMovebles();
+            MakeUI();
         }
 
         void Init()
         {
-            plugin = this;
-            config = Config.ReadObject<PluginConfig>();
+            Instance = this;
+
+            _config = Config.ReadObject<PluginConfig>();
         }
 
         void Unload()
@@ -69,7 +74,7 @@ namespace Oxide.Plugins
 
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
-                CuiHelper.DestroyUi(player, panelName);
+                CuiHelper.DestroyUi(player, _panelName);
             }
         }
 
@@ -83,7 +88,7 @@ namespace Oxide.Plugins
 
         void OnEntityMounted(ComputerStation station, BasePlayer player)
         {
-            if (!permission.UserHasPermission(player.UserIDString, permUse))
+            if (!permission.UserHasPermission(player.UserIDString, _permUse))
             {
                 return;
             }
@@ -98,7 +103,7 @@ namespace Oxide.Plugins
 
         void OnEntityDismounted(ComputerStation station, BasePlayer player)
         {
-            if (!permission.UserHasPermission(player.UserIDString, permUse))
+            if (!permission.UserHasPermission(player.UserIDString, _permUse))
             {
                 return;
             }
@@ -111,12 +116,12 @@ namespace Oxide.Plugins
 
             cameraMover.Destroy();
 
-            CuiHelper.DestroyUi(player, panelName);
+            CuiHelper.DestroyUi(player, _panelName);
         }
         #endregion
 
         #region Core
-        void CheckMoveble()
+        void MakeMovebles()
         {
             foreach(BaseEntity entity in BaseNetworkable.serverEntities)
             {
@@ -130,54 +135,67 @@ namespace Oxide.Plugins
 
         class CameraMover : MonoBehaviour
         {
-            ComputerStation station;
-            BasePlayer player;
+            ComputerStation _station;
+            BasePlayer _player;
 
             void Awake()
             {
-                player = GetComponent<BasePlayer>();
-                if (player == null)
+                _player = GetComponent<BasePlayer>();
+                if (_player == null)
                 {
                     Destroy();
                     return;
                 }
 
-                station = player?.GetMounted() as ComputerStation;
+                _station = _player.GetMounted() as ComputerStation;
             }
 
             void FixedUpdate()
             {
-                if (station == null || !station.currentlyControllingEnt.IsValid(true))
+                if (!(_player.serverInput.IsDown(BUTTON.FORWARD) 
+                || _player.serverInput.IsDown(BUTTON.BACKWARD) 
+                || _player.serverInput.IsDown(BUTTON.LEFT) 
+                || _player.serverInput.IsDown(BUTTON.RIGHT)))
                 {
                     return;
                 }
 
-                CCTV_RC cctv = station.currentlyControllingEnt.Get(true).GetComponent<CCTV_RC>();
+                if (_station == null || !_station.currentlyControllingEnt.IsValid(true))
+                {
+                    return;
+                }
+
+                CCTV_RC cctv = _station.currentlyControllingEnt.Get(true).GetComponent<CCTV_RC>();
                 if (cctv == null || cctv.IsStatic())
                 {
                     return;
                 }
 
-                float y = player.serverInput.IsDown(BUTTON.FORWARD) ? 1f : (player.serverInput.IsDown(BUTTON.BACKWARD) ? -1f : 0f);
-                float x = player.serverInput.IsDown(BUTTON.LEFT) ? -1f : (player.serverInput.IsDown(BUTTON.RIGHT) ? 1f : 0f);
+                float y = _player.serverInput.IsDown(BUTTON.FORWARD) ? 1f : (_player.serverInput.IsDown(BUTTON.BACKWARD) ? -1f : 0f);
+                float x = _player.serverInput.IsDown(BUTTON.LEFT) ? -1f : (_player.serverInput.IsDown(BUTTON.RIGHT) ? 1f : 0f);
 
                 InputState inputState = new InputState();
-                inputState.current.mouseDelta.y = y * plugin.config.RotateSpeed;
-                inputState.current.mouseDelta.x = x * plugin.config.RotateSpeed;
+                inputState.current.mouseDelta.y = y * Instance._config.RotateSpeed;
+                inputState.current.mouseDelta.x = x * Instance._config.RotateSpeed;
 
-                cctv.UserInput(inputState, player);
+                cctv.UserInput(inputState, _player);
+
+                if (Instance._config.RotateSound)
+                {
+                    EffectNetwork.Send(new Effect(_moveSound, cctv.transform.position, Vector3.zero));
+                }
             }
 
             public void Destroy() => Destroy(this);
         }
         #endregion
 
-        #region UI
-        void CreateUI()
+        #region I
+        void MakeUI()
         {
-            uiElements = new CuiElementContainer();
+            _uiElements = new CuiElementContainer();
 
-            string panel = uiElements.Add(new CuiPanel {
+            string panel = _uiElements.Add(new CuiPanel {
                 CursorEnabled = true,
                 Image = {
                     Color = "0 0 0 0"
@@ -186,7 +204,7 @@ namespace Oxide.Plugins
                     AnchorMin = "0.293 0.903",
                     AnchorMax = "0.684 0.951"
                 }
-            }, "Overlay", panelName);
+            }, "Overlay", _panelName);
 
             CuiLabel label = new CuiLabel
             {
@@ -202,16 +220,16 @@ namespace Oxide.Plugins
                 }
             };
 
-            textLabel = label.Text;
+            _textLabel = label.Text;
 
-            uiElements.Add(label, panel);
+            _uiElements.Add(label, panel);
         }
 
         CuiElementContainer PlayerUI(BasePlayer player)
         {
-            textLabel.Text = Lang("mounted", player.UserIDString);
+            _textLabel.Text = Lang("mounted", player.UserIDString);
 
-            return uiElements;
+            return _uiElements;
         }
         #endregion
 

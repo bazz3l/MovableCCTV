@@ -190,7 +190,7 @@ namespace Oxide.Plugins
         }
         #endregion
 
-        #region I
+        #region UI
         void MakeUI()
         {
             _uiElements = new CuiElementContainer();

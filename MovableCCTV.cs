@@ -1,30 +1,57 @@
 using System.Collections.Generic;
+using System.Linq;
 using Oxide.Game.Rust.Cui;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Movable CCTV", "Bazz3l", "1.0.8")]
+    [Info("Movable CCTV", "Bazz3l", "1.0.9")]
     [Description("Allows player to control placed cameras.")]
-    class MovableCCTV : RustPlugin
+    public class MovableCCTV : RustPlugin
     {
         #region Fields
-        const string _moveSound = "assets/prefabs/deployable/playerioents/detectors/hbhfsensor/effects/detect_up.prefab";
-        const string _permUse = "movablecctv.use";
-        const string _panelName = "cctv_panel";
+        
+        private const string MoveSound = "assets/prefabs/deployable/playerioents/detectors/hbhfsensor/effects/detect_up.prefab";
+        private const string PermUse = "movablecctv.use";
+        private const string PanelName = "cctv_panel";
+        
+        private CuiElementContainer _uiElements;
+        private CuiTextComponent _textLabel;
+        private PluginConfig _config;
 
-        public static MovableCCTV Instance;
-
-        CuiElementContainer _uiElements;
-        CuiTextComponent _textLabel;
         #endregion
 
         #region Config
-        PluginConfig _config;
+        
+        protected override void LoadDefaultConfig() => _config = GetDefaultConfig();
 
-        protected override void LoadDefaultConfig() => Config.WriteObject(GetDefaultConfig(), true);
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
 
-        PluginConfig GetDefaultConfig()
+            try
+            {
+                _config = Config.ReadObject<PluginConfig>();
+
+                if (_config == null)
+                {
+                    throw new JsonException();
+                }
+            }
+            catch
+            {
+                LoadDefaultConfig();
+
+                SaveConfig();
+                
+                PrintError("Loaded default configuration.");
+            }
+        }
+
+        protected override void SaveConfig() => Config.WriteObject(_config, true);
+
+        private PluginConfig GetDefaultConfig()
         {
             return new PluginConfig
             {
@@ -33,165 +60,130 @@ namespace Oxide.Plugins
             };
         }
 
-        class PluginConfig
+        private class PluginConfig
         {
-            public float RotateSound;
             public float RotateSpeed;
+            public bool RotateSound;
         }
+        
         #endregion
 
         #region Local
+        
         protected override void LoadDefaultMessages()
         {
-            lang.RegisterMessages(new Dictionary<string, string> {
-                {"mounted", "Control cameras using W A S D."}
-            }, this);
+            lang.RegisterMessages(new Dictionary<string, string> { {"mounted", "Control cameras using W A S D."} }, this);
         }
+        
         #endregion
 
         #region Oxide
-        void OnServerInitialized()
+        
+        private void OnServerInitialized()
         {
-            permission.RegisterPermission(_permUse, this);
-
-            MakeMovebles();
-            MakeUI();
-        }
-
-        void Init()
-        {
-            Instance = this;
-
-            _config = Config.ReadObject<PluginConfig>();
-        }
-
-        void Unload()
-        {
-            foreach (CameraMover obj in UnityEngine.Object.FindObjectsOfType<CameraMover>())
+            foreach (CCTV_RC cctv in BaseNetworkable.serverEntities.OfType<CCTV_RC>())
             {
-                GameObject.Destroy(obj);
-            }
+                if (cctv.IsStatic())
+                {
+                    continue;
+                }
 
-            foreach (BasePlayer player in BasePlayer.activePlayerList)
-            {
-                CuiHelper.DestroyUi(player, _panelName);
-            }
-        }
-
-        void OnEntitySpawned(CCTV_RC cctv)
-        {
-            if (!cctv.IsStatic())
-            {
                 cctv.hasPTZ = true;
             }
+
+            CreateUI();
         }
 
-        void OnEntityMounted(ComputerStation station, BasePlayer player)
+        private void Init() => permission.RegisterPermission(PermUse, this);
+
+        private void Unload()
         {
-            if (!permission.UserHasPermission(player.UserIDString, _permUse))
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+            {
+                DestroyUI(player);
+            }
+        }
+
+        private void OnEntitySpawned(CCTV_RC cctv)
+        {
+            if (cctv.IsStatic())
             {
                 return;
             }
 
-            if (player.GetComponent<CameraMover>() == null)
-            {
-                player.gameObject.AddComponent<CameraMover>();
-            }
-
-            CuiHelper.AddUi(player, PlayerUI(player));
+            cctv.hasPTZ = true;
         }
 
-        void OnEntityDismounted(ComputerStation station, BasePlayer player)
+        private void OnEntityMounted(ComputerStation station, BasePlayer player)
         {
-            if (!permission.UserHasPermission(player.UserIDString, _permUse))
+            if (!permission.UserHasPermission(player.UserIDString, PermUse))
             {
                 return;
             }
 
-            CameraMover cameraMover = player.GetComponent<CameraMover>();
-            if (cameraMover == null)
+            UpdateUI(player);
+        }
+
+        private void OnEntityDismounted(ComputerStation station, BasePlayer player)
+        {
+            if (!permission.UserHasPermission(player.UserIDString, PermUse))
             {
                 return;
             }
 
-            cameraMover.Destroy();
-
-            CuiHelper.DestroyUi(player, _panelName);
+            DestroyUI(player);
         }
-        #endregion
 
-        #region Core
-        void MakeMovebles()
+        private void OnPlayerInput(BasePlayer player, InputState input)
         {
-            foreach(BaseEntity entity in BaseNetworkable.serverEntities)
+            if (player == null || input == null)
             {
-                CCTV_RC cctv = entity.GetComponent<CCTV_RC>();
-                if (cctv != null && !cctv.IsStatic())
-                {
-                    cctv.hasPTZ = true;
-                }
+                return;
             }
+            
+            if (!(input.IsDown(BUTTON.FORWARD) 
+                  || input.IsDown(BUTTON.BACKWARD) 
+                  || input.IsDown(BUTTON.LEFT) 
+                  || input.IsDown(BUTTON.RIGHT)))
+            {
+                return;
+            }
+            
+            ComputerStation computerStation = player.GetMounted()?.GetComponentInParent<ComputerStation>();
+
+            if (computerStation == null)
+            {
+                return;
+            }
+
+            CCTV_RC cctvRc = computerStation.currentlyControllingEnt.Get(true).GetComponent<CCTV_RC>();
+                
+            if (cctvRc == null || cctvRc.IsStatic())
+            {
+                return;
+            }
+
+            float y = input.IsDown(BUTTON.FORWARD) ? 1f : (input.IsDown(BUTTON.BACKWARD) ? -1f : 0f);
+            float x = input.IsDown(BUTTON.LEFT) ? -1f : (input.IsDown(BUTTON.RIGHT) ? 1f : 0f);
+
+            InputState inputState = new InputState();
+            inputState.current.mouseDelta.y = y * _config.RotateSpeed;
+            inputState.current.mouseDelta.x = x * _config.RotateSpeed;
+            cctvRc.UserInput(inputState, player);
+
+            if (!_config.RotateSound)
+            {
+                return;
+            }
+            
+            EffectNetwork.Send(new Effect(MoveSound, cctvRc.transform.position, Vector3.zero));
         }
-
-        class CameraMover : MonoBehaviour
-        {
-            ComputerStation _station;
-            BasePlayer _player;
-
-            void Awake()
-            {
-                _player = GetComponent<BasePlayer>();
-                if (_player == null)
-                {
-                    Destroy();
-                    return;
-                }
-
-                _station = _player.GetMounted() as ComputerStation;
-            }
-
-            void FixedUpdate()
-            {
-                if (!(_player.serverInput.IsDown(BUTTON.FORWARD) 
-                || _player.serverInput.IsDown(BUTTON.BACKWARD) 
-                || _player.serverInput.IsDown(BUTTON.LEFT) 
-                || _player.serverInput.IsDown(BUTTON.RIGHT)))
-                {
-                    return;
-                }
-
-                if (_station == null || !_station.currentlyControllingEnt.IsValid(true))
-                {
-                    return;
-                }
-
-                CCTV_RC cctv = _station.currentlyControllingEnt.Get(true).GetComponent<CCTV_RC>();
-                if (cctv == null || cctv.IsStatic())
-                {
-                    return;
-                }
-
-                float y = _player.serverInput.IsDown(BUTTON.FORWARD) ? 1f : (_player.serverInput.IsDown(BUTTON.BACKWARD) ? -1f : 0f);
-                float x = _player.serverInput.IsDown(BUTTON.LEFT) ? -1f : (_player.serverInput.IsDown(BUTTON.RIGHT) ? 1f : 0f);
-
-                InputState inputState = new InputState();
-                inputState.current.mouseDelta.y = y * Instance._config.RotateSpeed;
-                inputState.current.mouseDelta.x = x * Instance._config.RotateSpeed;
-
-                cctv.UserInput(inputState, _player);
-
-                if (Instance._config.RotateSound)
-                {
-                    EffectNetwork.Send(new Effect(_moveSound, cctv.transform.position, Vector3.zero));
-                }
-            }
-
-            public void Destroy() => Destroy(this);
-        }
+        
         #endregion
 
         #region UI
-        void MakeUI()
+        
+        private void CreateUI()
         {
             _uiElements = new CuiElementContainer();
 
@@ -204,7 +196,7 @@ namespace Oxide.Plugins
                     AnchorMin = "0.293 0.903",
                     AnchorMax = "0.684 0.951"
                 }
-            }, "Overlay", _panelName);
+            }, "Overlay", PanelName);
 
             CuiLabel label = new CuiLabel
             {
@@ -225,16 +217,21 @@ namespace Oxide.Plugins
             _uiElements.Add(label, panel);
         }
 
-        CuiElementContainer PlayerUI(BasePlayer player)
+        private void UpdateUI(BasePlayer player)
         {
             _textLabel.Text = Lang("mounted", player.UserIDString);
-
-            return _uiElements;
+            
+            CuiHelper.AddUi(player, _uiElements);
         }
+
+        private void DestroyUI(BasePlayer player) => CuiHelper.DestroyUi(player, PanelName);
+
         #endregion
 
         #region Helpers
-        string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
+        
+        private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
+        
         #endregion
     }
 }
